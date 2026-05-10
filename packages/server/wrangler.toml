@@ -1,0 +1,3 @@
+name = "rfd-server"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"

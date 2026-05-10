@@ -2,6 +2,8 @@ reference/
 
 # build output
 dist/
+.wrangler/
+
 # generated types
 .astro/
 
