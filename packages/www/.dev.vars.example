@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars for local `wrangler dev` runs.
+# Astro's `astro dev` (vite) does NOT consume .dev.vars; for `astro dev` set these
+# in the shell or via a per-package .env. For full Workers-runtime testing use
+# `wrangler dev` after `astro build`.
+RFD_DEFAULT_OWNER=natemoo.re
+RFD_ADMIN_TOKEN=replace-with-a-long-random-string

@@ -1,16 +1,20 @@
 ---
 import type { ActorIdentifier } from '@atcute/lexicons/syntax';
+import { env } from 'cloudflare:workers';
 
-import { getDiscussionRepo, NoDiscussionRepoError } from '../lib/discussion.ts';
+import Link from '../components/Link.astro';
+import { NoDiscussionRepoError } from '../lib/discussion.ts';
+import { listProposals } from '../lib/proposal.ts';
 
 export const prerender = false;
 
 const { handle } = Astro.params;
+const db = env.db ?? null;
 
 let view;
 let error: string | null = null;
 try {
-  view = await getDiscussionRepo(handle as ActorIdentifier);
+  view = await listProposals({ DB: db }, handle as ActorIdentifier);
 } catch (err) {
   if (err instanceof NoDiscussionRepoError) {
     Astro.response.status = 404;
@@ -43,17 +47,23 @@ try {
             <code>{view.repo.knot}</code>
           </p>
           {view.repo.description && <p>{view.repo.description}</p>}
-          <dl>
-            <dt>Discussion repo</dt>
-            <dd><code>{view.claim.repo}</code></dd>
-            <dt>Claimed at</dt>
-            <dd><time datetime={view.claim.createdAt}>{view.claim.createdAt}</time></dd>
-            <dt>Repo created</dt>
-            <dd><time datetime={view.repo.createdAt}>{view.repo.createdAt}</time></dd>
-          </dl>
+
+          <h2>Proposals ({view.proposals.length})</h2>
+          {view.proposals.length === 0 && (
+            <p><em>No proposals yet. Add a <code>0001-name.md</code> to the repo's default branch, or open a pull adding one.</em></p>
+          )}
+          <ul>
+            {view.proposals.map((p) => (
+              <li>
+                <Link href={`/${handle}/${p.slug}`}>{p.slug}</Link>
+                {' · '}
+                <span>{p.status}</span>
+              </li>
+            ))}
+          </ul>
+
           <p>
-            <em>RFD list coming soon — cross-author aggregation needs an indexer. View on
-            <a href={`https://tangled.org/${view.repo.owner.handle ?? view.repo.owner.did}/${view.repo.name}`}>tangled.org</a>.</em>
+            <small>View on <a href={`https://tangled.org/${view.repo.owner.handle ?? view.repo.owner.did}/${view.repo.name}`}>tangled.org</a>.</small>
           </p>
         </article>
       )}

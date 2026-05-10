@@ -1,0 +1,26 @@
+---
+import { env } from 'cloudflare:workers';
+import type { HTMLAttributes } from 'astro/types';
+
+type Props = HTMLAttributes<'a'>;
+
+const { href, ...rest } = Astro.props;
+const owner = env.RFD_DEFAULT_OWNER?.trim();
+
+const normalize = (raw: string | URL | null | undefined): string | undefined => {
+  if (!raw) return undefined;
+  const value = typeof raw === 'string' ? raw : raw.href;
+  if (!owner) return value;
+  if (!value.startsWith('/') || value.startsWith('//')) return value;
+  // Parse as relative URL using a throwaway base so we get pathname/search/hash.
+  const parsed = new URL(value, 'http://x');
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments[0] !== owner) return value;
+  const tail = segments.slice(1).join('/');
+  parsed.pathname = tail ? `/${tail}` : '/';
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+};
+
+const resolved = normalize(href);
+---
+<a href={resolved} {...rest}><slot /></a>

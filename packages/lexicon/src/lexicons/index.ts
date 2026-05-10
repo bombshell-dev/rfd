@@ -1,4 +1,13 @@
 export * as ShTangledRepo from "./types/sh/tangled/repo.ts";
+export * as ShTangledRepoBlob from "./types/sh/tangled/repo/blob.ts";
+export * as ShTangledRepoGetDefaultBranch from "./types/sh/tangled/repo/getDefaultBranch.ts";
+export * as ShTangledRepoIssue from "./types/sh/tangled/repo/issue.ts";
+export * as ShTangledRepoIssueComment from "./types/sh/tangled/repo/issue/comment.ts";
 export * as ShTangledRepoPull from "./types/sh/tangled/repo/pull.ts";
 export * as ShTangledRepoPullComment from "./types/sh/tangled/repo/pull/comment.ts";
+export * as ShTangledRepoPullStatus from "./types/sh/tangled/repo/pull/status.ts";
+export * as ShTangledRepoPullStatusClosed from "./types/sh/tangled/repo/pull/status/closed.ts";
+export * as ShTangledRepoPullStatusMerged from "./types/sh/tangled/repo/pull/status/merged.ts";
+export * as ShTangledRepoPullStatusOpen from "./types/sh/tangled/repo/pull/status/open.ts";
+export * as ShTangledRepoTree from "./types/sh/tangled/repo/tree.ts";
 export * as StItchDiscussionRepo from "./types/st/itch/discussion/repo.ts";

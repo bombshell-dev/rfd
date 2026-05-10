@@ -1,0 +1,111 @@
+---
+import type { ActorIdentifier } from '@atcute/lexicons/syntax';
+import { env } from 'cloudflare:workers';
+
+import Link from '../../components/Link.astro';
+import { NoDiscussionRepoError } from '../../lib/discussion.ts';
+import { getProposal } from '../../lib/proposal.ts';
+
+export const prerender = false;
+
+const { handle, slug } = Astro.params;
+const db = env.db ?? null;
+
+let view;
+let error: string | null = null;
+try {
+  view = await getProposal({ DB: db }, handle as ActorIdentifier, slug as string);
+  if (!view) {
+    Astro.response.status = 404;
+    error = `proposal not found: ${slug}`;
+  }
+} catch (err) {
+  if (err instanceof NoDiscussionRepoError) {
+    Astro.response.status = 404;
+    error = err.message;
+  } else {
+    Astro.response.status = 500;
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{view ? `${view.slug} — st.itch` : 'Proposal — st.itch'}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <header>
+      <Link href="/">st.itch</Link>
+      {' · '}
+      <Link href={`/${handle}`}>{handle}</Link>
+    </header>
+    <main>
+      {error && <p role="alert">{error}</p>}
+      {view && (
+        <article>
+          <h1>{view.slug}</h1>
+          <p>
+            <strong>Status:</strong> <code>{view.status}</code>
+            {view.content && (
+              <>
+                {' · '}
+                <small>Source: {view.content.source === 'default' ? 'default branch' : 'open pull'}</small>
+              </>
+            )}
+          </p>
+
+          {view.content ? (
+            <section>
+              <h2>{view.slug}.md</h2>
+              <pre>{view.content.text}</pre>
+            </section>
+          ) : (
+            <p><em>No content yet (file isn't on the default branch and no open pull touches it).</em></p>
+          )}
+
+          <section>
+            <h2>Pulls ({view.pulls.length})</h2>
+            {view.pulls.length === 0 && <p><em>No pulls indexed.</em></p>}
+            <ul>
+              {view.pulls.map((p) => (
+                <li>
+                  <strong>{p.title}</strong>
+                  {' · '}
+                  <code>{p.state}</code>
+                  {' · '}
+                  <small>{p.author_did}</small>
+                  {' · '}
+                  <time datetime={p.created_at}>{p.created_at}</time>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <h2>Discussion ({view.discussion.length})</h2>
+            {view.discussion.length === 0 && (
+              <p><em>No comments yet.</em></p>
+            )}
+            <ul>
+              {view.discussion.map((c) => (
+                <li>
+                  <p>
+                    <strong>{c.authorDid}</strong>
+                    {' · '}
+                    <code>{c.source}</code>
+                    {' · '}
+                    <time datetime={c.createdAt}>{c.createdAt}</time>
+                  </p>
+                  <pre>{c.body}</pre>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </article>
+      )}
+    </main>
+  </body>
+</html>

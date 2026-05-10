@@ -1,6 +1,8 @@
 {
 	"compatibility_date": "2026-05-10",
-	"compatibility_flags": ["global_fetch_strictly_public"],
+	"compatibility_flags": [
+		"global_fetch_strictly_public"
+	],
 	"name": "www",
 	"main": "@astrojs/cloudflare/entrypoints/server",
 	"assets": {
@@ -9,5 +11,22 @@
 	},
 	"observability": {
 		"enabled": true
-	}
+	},
+	"vars": {
+		"RFD_DEFAULT_OWNER": "",
+		"RFD_ADMIN_TOKEN": ""
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "rfd",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		},
+		{
+			"binding": "db",
+			"database_name": "db",
+			"database_id": "28268fa4-64f6-4a97-aa95-e569d26fc5c1"
+		}
+	]
 }
