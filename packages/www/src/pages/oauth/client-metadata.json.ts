@@ -8,7 +8,7 @@ export const GET: APIRoute = ({ url }) => {
 		client_id: `${origin}/oauth/client-metadata.json`,
 		client_name: 'st.itch RFD',
 		client_uri: origin,
-		redirect_uris: [`${origin}/oauth/callback`],
+		redirect_uris: [`${origin}/settings/oauth/callback`],
 		scope: 'atproto transition:generic',
 		grant_types: ['authorization_code', 'refresh_token'],
 		response_types: ['code'],

@@ -1,0 +1,82 @@
+---
+import type { ActorIdentifier } from '@atcute/lexicons/syntax';
+
+import { fetchPull } from '../../../lib/pull.ts';
+
+export const prerender = false;
+
+const { handle, rkey } = Astro.params;
+
+let view;
+let error: string | null = null;
+try {
+  view = await fetchPull({ handle: handle as ActorIdentifier, rkey: rkey as string });
+} catch (err) {
+  Astro.response.status = err instanceof Error && /not found/i.test(err.message) ? 404 : 500;
+  error = err instanceof Error ? err.message : String(err);
+}
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{view ? `${view.pull.title} — st.itch` : `Pull — st.itch`}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <header>
+      <a href="/">st.itch</a>
+      {' · '}
+      <a href={`/${handle}`}>{handle}</a>
+    </header>
+    <main>
+      {error && <p role="alert">{error}</p>}
+      {view && (
+        <article>
+          <h1>{view.pull.title}</h1>
+          <p>
+            <strong>{handle}</strong>
+            {' · '}
+            <time datetime={view.pull.createdAt}>{view.pull.createdAt}</time>
+            {view.repo && (
+              <>
+                {' · '}
+                <code>{view.repo.name}</code>
+              </>
+            )}
+          </p>
+          {view.pull.body && (
+            <section>
+              <h2>Description</h2>
+              <pre>{view.pull.body}</pre>
+            </section>
+          )}
+          {view.markdown && (
+            <section>
+              <h2>{view.markdown.path}</h2>
+              <pre>{view.markdown.content}</pre>
+            </section>
+          )}
+          <section>
+            <h2>Comments ({view.comments.length})</h2>
+            {view.comments.length === 0 && (
+              <p><em>No comments yet from the pull author. Cross-author comments require an indexer (coming soon).</em></p>
+            )}
+            <ul>
+              {view.comments.map((c) => (
+                <li>
+                  <p>
+                    <strong>{c.author.handle ?? c.author.did}</strong>
+                    {' · '}
+                    <time datetime={c.createdAt}>{c.createdAt}</time>
+                  </p>
+                  <pre>{c.body}</pre>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </article>
+      )}
+    </main>
+  </body>
+</html>

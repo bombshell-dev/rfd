@@ -1,17 +1,36 @@
 ---
-
 ---
-
+<!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>st.itch — RFDs over atproto</title>
+  </head>
+  <body>
+    <main>
+      <h1>st.itch</h1>
+      <p>Hosted RFCs riding on atproto + tangled.</p>
+      <form id="lookup">
+        <label>
+          Browse a handle
+          <input type="text" name="handle" placeholder="alice.bsky.social" required autofocus />
+        </label>
+        <button type="submit">Go</button>
+      </form>
+      <p>
+        Or <a href="/settings/login">sign in</a> to claim your discussion repo.
+      </p>
+    </main>
+    <script>
+      const form = document.getElementById('lookup') as HTMLFormElement;
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const handle = new FormData(form).get('handle')?.toString().trim();
+        if (!handle) return;
+        location.assign(`/${encodeURIComponent(handle)}`);
+      });
+    </script>
+  </body>
 </html>

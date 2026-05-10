@@ -22,7 +22,7 @@
       </p>
     </main>
     <script>
-      import { configure, resumeAgent } from '../lib/oauth.ts';
+      import { configure, resumeAgent } from '../../lib/oauth.ts';
 
       const status = document.getElementById('status');
       const error = document.getElementById('error');
@@ -39,7 +39,7 @@
 
       const did = sessionStorage.getItem('rfd:did');
       if (!did) {
-        location.replace('/login');
+        location.replace('/settings/login');
       } else {
         try {
           configure();

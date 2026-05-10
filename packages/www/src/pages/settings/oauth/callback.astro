@@ -13,14 +13,14 @@
       <p id="error" role="alert" hidden></p>
     </main>
     <script>
-      import { configure, finishLogin } from '../../lib/oauth.ts';
+      import { configure, finishLogin } from '../../../lib/oauth.ts';
       const status = document.getElementById('status');
       const error = document.getElementById('error');
       try {
         configure();
         const session = await finishLogin();
         sessionStorage.setItem('rfd:did', session.info.sub);
-        location.replace('/claim');
+        location.replace('/settings/claim');
       } catch (err) {
         status.hidden = true;
         error.textContent = `Sign-in failed: ${err?.message ?? String(err)}`;

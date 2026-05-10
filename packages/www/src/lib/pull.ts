@@ -38,7 +38,6 @@ export interface PullView {
 
 export interface FetchPullArgs {
 	handle: ActorIdentifier;
-	repo: string;
 	rkey: string;
 }
 

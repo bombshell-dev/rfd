@@ -57,7 +57,7 @@ export function configure(origin: string = location.origin): void {
 			web: new WebDidDocumentResolver(),
 		},
 	});
-	const redirectUri = `${origin}/oauth/callback`;
+	const redirectUri = `${origin}/settings/oauth/callback`;
 	configureOAuth({
 		metadata: {
 			client_id: clientIdFor(origin, redirectUri),
