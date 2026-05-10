@@ -8,7 +8,7 @@
   "main": "./src/lexicons/index.ts",
   "exports": {
     ".": "./src/lexicons/index.ts",
-    "./types/*": "./src/lexicons/types/sh/tangled/*.ts",
+    "./types/*": "./src/lexicons/types/*.ts",
     "./lexicons/*": "./lexicons/*.json",
     "./package.json": "./package.json"
   },
@@ -16,7 +16,11 @@
     "mappings": {
       "sh.tangled.*": {
         "type": "namespace",
-        "path": "./types/{{nsid_remainder}}"
+        "path": "./types/sh/tangled/{{nsid_remainder}}"
+      },
+      "st.itch.*": {
+        "type": "namespace",
+        "path": "./types/st/itch/{{nsid_remainder}}"
       }
     }
   },
