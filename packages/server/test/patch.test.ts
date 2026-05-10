@@ -76,6 +76,22 @@ describe('extractMarkdownFromDiff', () => {
 	it('returns null on empty input', () => {
 		expect(extractMarkdownFromDiff('')).toBeNull();
 	});
+
+	it('returns an empty .md when the patch creates an empty new .md file', () => {
+		const patch = `From abc Mon Sep 17 00:00:00 2001
+Subject: [PATCH] hello
+
+diff --git a/0001.md b/0001.md
+new file mode 100644
+index 0000000..e69de29
+--
+2.53.0
+`;
+		const result = extractMarkdownFromDiff(patch);
+		expect(result).not.toBeNull();
+		expect(result!.path).toBe('0001.md');
+		expect(result!.content).toBe('');
+	});
 });
 
 describe('gunzipToString', () => {
