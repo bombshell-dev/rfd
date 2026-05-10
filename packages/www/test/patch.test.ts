@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractMarkdownFromDiff, gunzipToString } from '../src/patch.ts';
+import { extractMarkdownFromDiff, gunzipToString } from '../src/lib/patch.ts';
 
 const ADD_MD_PATCH = `From abc123 Mon Sep 17 00:00:00 2001
 From: Jane Doe <jane@example.com>

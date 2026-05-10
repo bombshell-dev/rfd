@@ -1,0 +1,104 @@
+---
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pick your discussion repo — st.itch</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <main>
+      <h1>Pick your discussion repo</h1>
+      <p id="status">Loading your tangled repos…</p>
+      <p id="error" role="alert" hidden></p>
+      <ul id="repos" hidden></ul>
+      <p id="empty" hidden>
+        You have no <code>sh.tangled.repo</code> records yet. Create one on
+        <a href="https://tangled.org">tangled.org</a> first.
+      </p>
+      <p id="success" hidden>
+        Claimed! Verify at <a id="verify-link" href="#" target="_blank" rel="noopener"></a>
+      </p>
+    </main>
+    <script>
+      import { configure, resumeAgent } from '../lib/oauth.ts';
+
+      const status = document.getElementById('status');
+      const error = document.getElementById('error');
+      const list = document.getElementById('repos');
+      const empty = document.getElementById('empty');
+      const success = document.getElementById('success');
+      const verifyLink = document.getElementById('verify-link');
+
+      const showError = (msg) => {
+        status.hidden = true;
+        error.textContent = msg;
+        error.hidden = false;
+      };
+
+      const did = sessionStorage.getItem('rfd:did');
+      if (!did) {
+        location.replace('/login');
+      } else {
+        try {
+          configure();
+          const { rpc } = await resumeAgent(did);
+
+          const repos = await rpc.get('com.atproto.repo.listRecords', {
+            params: { repo: did, collection: 'sh.tangled.repo', limit: 100 },
+          });
+
+          status.hidden = true;
+          if (repos.data.records.length === 0) {
+            empty.hidden = false;
+          } else {
+            list.hidden = false;
+            for (const record of repos.data.records) {
+              const li = document.createElement('li');
+              const button = document.createElement('button');
+              button.type = 'button';
+              const value = record.value;
+              button.textContent = `${value.name} · ${value.knot}${value.description ? ' — ' + value.description : ''}`;
+              button.addEventListener('click', async () => {
+                button.disabled = true;
+                try {
+                  await rpc.call('com.atproto.repo.putRecord', {
+                    data: {
+                      repo: did,
+                      collection: 'st.itch.discussion.repo',
+                      rkey: 'self',
+                      record: {
+                        $type: 'st.itch.discussion.repo',
+                        repo: record.uri,
+                        createdAt: new Date().toISOString(),
+                      },
+                    },
+                  });
+                  list.hidden = true;
+                  success.hidden = false;
+                  // Best-effort handle resolution for the verify link;
+                  // fall back to DID if we can't infer it from the response.
+                  const handle = await rpc
+                    .get('com.atproto.repo.describeRepo', { params: { repo: did } })
+                    .then((r) => r.data.handle ?? did)
+                    .catch(() => did);
+                  const apiUrl = `/api/v0/${handle}`;
+                  verifyLink.href = apiUrl;
+                  verifyLink.textContent = apiUrl;
+                } catch (err) {
+                  button.disabled = false;
+                  showError(err?.message ?? String(err));
+                }
+              });
+              li.appendChild(button);
+              list.appendChild(li);
+            }
+          }
+        } catch (err) {
+          showError(err?.message ?? String(err));
+        }
+      }
+    </script>
+  </body>
+</html>

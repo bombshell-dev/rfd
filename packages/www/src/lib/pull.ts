@@ -1,8 +1,8 @@
 import { parseCanonicalResourceUri } from '@atcute/lexicons/syntax';
 import type { ActorIdentifier, Did, ResourceUri } from '@atcute/lexicons/syntax';
-import type * as Pull from 'lexicon/types/repo/pull';
-import type * as PullComment from 'lexicon/types/repo/pull/comment';
-import type * as Repo from 'lexicon/types/repo';
+import type * as Pull from 'lexicon/types/sh/tangled/repo/pull';
+import type * as PullComment from 'lexicon/types/sh/tangled/repo/pull/comment';
+import type * as Repo from 'lexicon/types/sh/tangled/repo';
 
 import { clientFor, resolveActor } from './atproto.ts';
 import { extractMarkdownFromPatch, type ExtractedMarkdown } from './patch.ts';
