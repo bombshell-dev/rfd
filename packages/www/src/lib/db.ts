@@ -222,6 +222,23 @@ export async function issueExists(db: D1Database, uri: string): Promise<boolean>
 	return r !== null;
 }
 
+const DELETE_TABLE_BY_COLLECTION: Record<string, string> = {
+	'sh.tangled.repo.pull': 'pulls',
+	'sh.tangled.repo.pull.comment': 'comments',
+	'sh.tangled.repo.issue': 'issues',
+	'sh.tangled.repo.issue.comment': 'issue_comments',
+};
+
+export async function deleteRecord(
+	db: D1Database,
+	collection: string,
+	uri: string,
+): Promise<void> {
+	const table = DELETE_TABLE_BY_COLLECTION[collection];
+	if (!table) return;
+	await db.prepare(`DELETE FROM ${table} WHERE uri = ?`).bind(uri).run();
+}
+
 export async function selectPullsTouchingProposal(
 	db: D1Database,
 	ownerRepoUri: string,

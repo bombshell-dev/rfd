@@ -1,0 +1,30 @@
+{
+	"name": "www-spacedust",
+	"main": "./spacedust.ts",
+	"compatibility_date": "2026-05-10",
+	"compatibility_flags": ["global_fetch_strictly_public"],
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "db",
+			"database_name": "db",
+			"database_id": "28268fa4-64f6-4a97-aa95-e569d26fc5c1"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SUBSCRIBER",
+				"class_name": "SpacedustSubscriber"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["SpacedustSubscriber"]
+		}
+	]
+}

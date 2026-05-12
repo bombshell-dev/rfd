@@ -27,6 +27,7 @@
     "wrangler": "^4.90.0"
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.9",
     "@astrojs/compiler-rs": "^0.1.10",
     "@cloudflare/workers-types": "^4.0.0",
     "vitest": "^4.0.0"

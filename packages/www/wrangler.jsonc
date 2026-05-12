@@ -28,5 +28,11 @@
 			"database_name": "db",
 			"database_id": "28268fa4-64f6-4a97-aa95-e569d26fc5c1"
 		}
+	],
+	"services": [
+		{
+			"binding": "SPACEDUST",
+			"service": "www-spacedust"
+		}
 	]
 }
