@@ -1,4 +1,6 @@
-# rfds
+# rfd
+experimental atproto-powered request for discussion (rfd) platform
 
-[experimental] atproto-powered request for discussion platform
+> [WARNING]
+> prototype, more to come
 
