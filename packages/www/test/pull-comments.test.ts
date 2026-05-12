@@ -30,11 +30,30 @@ describe('collectCommentsFor', () => {
 					'at://did:plc:a/sh.tangled.repo.pull.comment/c1',
 				]),
 			hydrate,
+			resolveHandle: async () => undefined,
 		});
 
 		expect(comments.map((c) => c.body)).toEqual(['first', 'second']);
-		expect(comments[0].author).toEqual({ did: 'did:plc:a' });
-		expect(comments[1].author).toEqual({ did: 'did:plc:b' });
+		expect(comments[0].author).toEqual({ did: 'did:plc:a', handle: undefined });
+		expect(comments[1].author).toEqual({ did: 'did:plc:b', handle: undefined });
+	});
+
+	it('resolves handles via the injected resolver', async () => {
+		const hydrate = vi.fn().mockResolvedValue({
+			uri: 'at://did:plc:a/sh.tangled.repo.pull.comment/c1',
+			cid: 'bafy1',
+			value: { pull: PULL_URI, body: 'hi', createdAt: '2026-05-10T00:00:00Z' },
+		});
+		const resolveHandle = vi.fn().mockResolvedValue('alice.example');
+
+		const comments = await collectCommentsFor(PULL_URI, {
+			listLinks: () => asyncIter(['at://did:plc:a/sh.tangled.repo.pull.comment/c1']),
+			hydrate,
+			resolveHandle,
+		});
+
+		expect(comments[0].author).toEqual({ did: 'did:plc:a', handle: 'alice.example' });
+		expect(resolveHandle).toHaveBeenCalledWith('did:plc:a');
 	});
 
 	it('skips comments whose pull field does not match the requested pull (defensive)', async () => {
@@ -51,6 +70,7 @@ describe('collectCommentsFor', () => {
 		const comments = await collectCommentsFor(PULL_URI, {
 			listLinks: () => asyncIter(['at://did:plc:b/sh.tangled.repo.pull.comment/c1']),
 			hydrate,
+			resolveHandle: async () => undefined,
 		});
 
 		expect(comments).toEqual([]);
@@ -62,6 +82,7 @@ describe('collectCommentsFor', () => {
 		const comments = await collectCommentsFor(PULL_URI, {
 			listLinks: () => asyncIter(['at://did:plc:b/sh.tangled.repo.pull.comment/gone']),
 			hydrate,
+			resolveHandle: async () => undefined,
 		});
 
 		expect(comments).toEqual([]);

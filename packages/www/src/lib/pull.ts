@@ -130,6 +130,7 @@ async function fetchBlob(pds: string, did: string, cid: string): Promise<Uint8Ar
 export interface CollectCommentsDeps {
 	listLinks?: (pullUri: string) => AsyncIterable<string>;
 	hydrate?: (atUri: string) => Promise<HydratedRecord | null>;
+	resolveHandle?: (did: string) => Promise<string | undefined>;
 }
 
 export async function collectCommentsFor(
@@ -145,6 +146,7 @@ export async function collectCommentsFor(
 				path: '.pull',
 			}));
 	const hydrate = deps.hydrate ?? hydrateRecord;
+	const resolveHandle = deps.resolveHandle ?? defaultResolveHandle();
 
 	const out: PullView['comments'] = [];
 	for await (const commentUri of listLinks(pullUri)) {
@@ -154,14 +156,29 @@ export async function collectCommentsFor(
 		if (value.pull !== pullUri) continue;
 		const parsed = parseAtUri(hydrated.uri);
 		if (!parsed) continue;
+		const handle = await resolveHandle(parsed.did);
 		out.push({
 			uri: hydrated.uri,
 			cid: hydrated.cid,
 			body: value.body,
 			createdAt: value.createdAt,
-			author: { did: parsed.did },
+			author: { did: parsed.did, handle },
 		});
 	}
 	out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 	return out;
+}
+
+function defaultResolveHandle(): (did: string) => Promise<string | undefined> {
+	const cache = new Map<string, Promise<string | undefined>>();
+	return (did) => {
+		let promise = cache.get(did);
+		if (!promise) {
+			promise = resolveActor(did as ActorIdentifier)
+				.then((r) => r.handle)
+				.catch(() => undefined);
+			cache.set(did, promise);
+		}
+		return promise;
+	};
 }
