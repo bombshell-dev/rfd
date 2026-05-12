@@ -3,7 +3,7 @@ import type { ActorIdentifier, Did } from '@atcute/lexicons/syntax';
 import type * as DiscussionRepo from 'lexicon/types/st/itch/discussion/repo';
 import type * as Repo from 'lexicon/types/sh/tangled/repo';
 
-import { clientFor, resolveActor } from './atproto.ts';
+import { clientForSlingshot, resolveActor } from './atproto.ts';
 
 export interface DiscussionRepoView {
 	claim: {
@@ -32,11 +32,11 @@ export class NoDiscussionRepoError extends Error {
 
 export async function getDiscussionRepo(handle: ActorIdentifier): Promise<DiscussionRepoView> {
 	const claimer = await resolveActor(handle);
-	const claimerRpc = clientFor(claimer.pds);
+	const rpc = clientForSlingshot();
 
 	let claimRes;
 	try {
-		claimRes = await claimerRpc.get('com.atproto.repo.getRecord', {
+		claimRes = await rpc.get('com.atproto.repo.getRecord', {
 			params: {
 				repo: claimer.did as Did,
 				collection: 'st.itch.discussion.repo',
@@ -50,8 +50,7 @@ export async function getDiscussionRepo(handle: ActorIdentifier): Promise<Discus
 
 	const parsed = parseCanonicalResourceUri(claimValue.repo);
 	const owner = await resolveActor(parsed.repo as ActorIdentifier);
-	const ownerRpc = clientFor(owner.pds);
-	const repoRes = await ownerRpc.get('com.atproto.repo.getRecord', {
+	const repoRes = await rpc.get('com.atproto.repo.getRecord', {
 		params: {
 			repo: parsed.repo,
 			collection: 'sh.tangled.repo',

@@ -1,11 +1,14 @@
 import { parseCanonicalResourceUri } from '@atcute/lexicons/syntax';
-import type { ActorIdentifier, Did, ResourceUri } from '@atcute/lexicons/syntax';
+import type { ActorIdentifier, Did } from '@atcute/lexicons/syntax';
 import type * as Pull from 'lexicon/types/sh/tangled/repo/pull';
 import type * as PullComment from 'lexicon/types/sh/tangled/repo/pull/comment';
 import type * as Repo from 'lexicon/types/sh/tangled/repo';
 
-import { clientFor, resolveActor } from './atproto.ts';
+import { clientForSlingshot, resolveActor } from './atproto.ts';
+import { listLinkingRecords } from './constellation.ts';
+import { parseAtUri } from './index-event.ts';
 import { extractMarkdownFromPatch, type ExtractedMarkdown } from './patch.ts';
+import { hydrateRecord, type HydratedRecord } from './slingshot.ts';
 
 export interface PullView {
 	pull: {
@@ -43,13 +46,11 @@ export interface FetchPullArgs {
 
 export async function fetchPull({ handle, rkey }: FetchPullArgs): Promise<PullView> {
 	const author = await resolveActor(handle);
-	const rpc = clientFor(author.pds);
-
-	const pullRes = await rpc.get('com.atproto.repo.getRecord', {
+	const pullRes = await clientForSlingshot().get('com.atproto.repo.getRecord', {
 		params: { repo: author.did as Did, collection: 'sh.tangled.repo.pull', rkey },
 	});
 	const pullValue = pullRes.data.value as Pull.Main;
-	const pullUri = pullRes.data.uri as ResourceUri;
+	const pullUri = pullRes.data.uri;
 
 	const repoView = await fetchRepoFromTarget(pullValue.target);
 
@@ -65,12 +66,7 @@ export async function fetchPull({ handle, rkey }: FetchPullArgs): Promise<PullVi
 		}
 	}
 
-	const comments = await listCommentsForPull({
-		pds: author.pds,
-		did: author.did,
-		pullUri,
-		authorHandle: author.handle,
-	});
+	const comments = await collectCommentsFor(pullUri);
 
 	return {
 		pull: {
@@ -103,9 +99,7 @@ async function fetchRepoFromTarget(target: Pull.Target): Promise<PullView['repo'
 	const { repo: ownerDid, rkey } = parsed;
 
 	try {
-		const owner = await resolveActor(ownerDid as ActorIdentifier);
-		const rpc = clientFor(owner.pds);
-		const res = await rpc.get('com.atproto.repo.getRecord', {
+		const res = await clientForSlingshot().get('com.atproto.repo.getRecord', {
 			params: { repo: ownerDid, collection: 'sh.tangled.repo', rkey },
 		});
 		const value = res.data.value as Repo.Main;
@@ -133,44 +127,41 @@ async function fetchBlob(pds: string, did: string, cid: string): Promise<Uint8Ar
 	return new Uint8Array(await res.arrayBuffer());
 }
 
-interface ListCommentsArgs {
-	pds: string;
-	did: string;
-	pullUri: ResourceUri;
-	authorHandle: string;
+export interface CollectCommentsDeps {
+	listLinks?: (pullUri: string) => AsyncIterable<string>;
+	hydrate?: (atUri: string) => Promise<HydratedRecord | null>;
 }
 
-async function listCommentsForPull({
-	pds,
-	did,
-	pullUri,
-	authorHandle,
-}: ListCommentsArgs): Promise<PullView['comments']> {
-	const rpc = clientFor(pds);
-	const out: PullView['comments'] = [];
-	let cursor: string | undefined;
-	do {
-		const res = await rpc.get('com.atproto.repo.listRecords', {
-			params: {
-				repo: did as Did,
+export async function collectCommentsFor(
+	pullUri: string,
+	deps: CollectCommentsDeps = {},
+): Promise<PullView['comments']> {
+	const listLinks =
+		deps.listLinks ??
+		((uri: string) =>
+			listLinkingRecords({
+				target: uri,
 				collection: 'sh.tangled.repo.pull.comment',
-				limit: 100,
-				cursor,
-			},
+				path: '.pull',
+			}));
+	const hydrate = deps.hydrate ?? hydrateRecord;
+
+	const out: PullView['comments'] = [];
+	for await (const commentUri of listLinks(pullUri)) {
+		const hydrated = await hydrate(commentUri);
+		if (!hydrated) continue;
+		const value = hydrated.value as PullComment.Main;
+		if (value.pull !== pullUri) continue;
+		const parsed = parseAtUri(hydrated.uri);
+		if (!parsed) continue;
+		out.push({
+			uri: hydrated.uri,
+			cid: hydrated.cid,
+			body: value.body,
+			createdAt: value.createdAt,
+			author: { did: parsed.did },
 		});
-		for (const r of res.data.records) {
-			const value = r.value as PullComment.Main;
-			if (value.pull !== pullUri) continue;
-			out.push({
-				uri: r.uri,
-				cid: r.cid,
-				body: value.body,
-				createdAt: value.createdAt,
-				author: { did, handle: authorHandle },
-			});
-		}
-		cursor = res.data.cursor;
-	} while (cursor);
+	}
 	out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 	return out;
 }

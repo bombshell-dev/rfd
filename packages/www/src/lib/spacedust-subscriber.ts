@@ -1,12 +1,11 @@
 import type { ActorIdentifier } from '@atcute/lexicons/syntax';
 
-import { listLinkingRecords } from './constellation.ts';
+import { coldStartFromConstellation } from './cold-start.ts';
 import { getDiscussionRepo } from './discussion.ts';
 import {
 	createDbOps,
 	indexDelete,
 	indexRecord,
-	parseAtUri,
 	TRACKED_COLLECTIONS,
 } from './index-event.ts';
 import { hydrateRecord } from './slingshot.ts';
@@ -31,11 +30,6 @@ const SPACEDUST_SOURCES = [
 	'sh.tangled.repo.pull.status:pull',
 	'sh.tangled.repo.issue:repo',
 	'sh.tangled.repo.issue.comment:issue',
-];
-
-const RECONCILE_TARGETS: Array<{ collection: string; path: string }> = [
-	{ collection: 'sh.tangled.repo.pull', path: '.target.repo' },
-	{ collection: 'sh.tangled.repo.issue', path: '.repo' },
 ];
 
 export interface SpacedustEnv {
@@ -203,68 +197,6 @@ export class SpacedustSubscriber implements DurableObject {
 	}
 
 	private async reconcile(config: OwnerConfig): Promise<void> {
-		const ops = createDbOps(this.env.db);
-		for (const target of RECONCILE_TARGETS) {
-			for await (const uri of listLinkingRecords({
-				target: config.ownerRepoUri,
-				collection: target.collection,
-				path: target.path,
-			})) {
-				await this.hydrateAndIndex(uri, target.collection, config, ops);
-			}
-		}
-		const trackedPulls = await this.env.db
-			.prepare('SELECT uri FROM pulls WHERE target_repo_uri = ?')
-			.bind(config.ownerRepoUri)
-			.all<{ uri: string }>();
-		for (const { uri: pullUri } of trackedPulls.results ?? []) {
-			for (const sub of [
-				{ collection: 'sh.tangled.repo.pull.comment', path: '.pull' },
-				{ collection: 'sh.tangled.repo.pull.status', path: '.pull' },
-			]) {
-				for await (const uri of listLinkingRecords({
-					target: pullUri,
-					collection: sub.collection,
-					path: sub.path,
-				})) {
-					await this.hydrateAndIndex(uri, sub.collection, config, ops);
-				}
-			}
-		}
-		const trackedIssues = await this.env.db
-			.prepare('SELECT uri FROM issues WHERE target_repo_uri = ?')
-			.bind(config.ownerRepoUri)
-			.all<{ uri: string }>();
-		for (const { uri: issueUri } of trackedIssues.results ?? []) {
-			for await (const uri of listLinkingRecords({
-				target: issueUri,
-				collection: 'sh.tangled.repo.issue.comment',
-				path: '.issue',
-			})) {
-				await this.hydrateAndIndex(uri, 'sh.tangled.repo.issue.comment', config, ops);
-			}
-		}
-	}
-
-	private async hydrateAndIndex(
-		atUri: string,
-		collection: string,
-		config: OwnerConfig,
-		ops: ReturnType<typeof createDbOps>,
-	): Promise<void> {
-		const parsed = parseAtUri(atUri);
-		if (!parsed) return;
-		const hydrated = await hydrateRecord(atUri);
-		if (!hydrated) return;
-		await indexRecord(
-			{
-				uri: hydrated.uri,
-				cid: hydrated.cid,
-				collection,
-				value: hydrated.value,
-			},
-			ops,
-			config.ownerRepoUri,
-		);
+		await coldStartFromConstellation(this.env.db, config.owner as ActorIdentifier);
 	}
 }

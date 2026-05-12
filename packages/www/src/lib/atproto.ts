@@ -41,3 +41,16 @@ export async function resolveActor(actor: ActorIdentifier): Promise<ResolvedActo
 export function clientFor(pds: string): XRPC {
 	return new XRPC({ handler: simpleFetchHandler({ service: pds }) });
 }
+
+export const SLINGSHOT_BASE_URL = 'https://slingshot.microcosm.blue';
+
+let slingshotClient: XRPC | undefined;
+
+export function clientForSlingshot(): XRPC {
+	if (!slingshotClient) {
+		slingshotClient = new XRPC({
+			handler: simpleFetchHandler({ service: SLINGSHOT_BASE_URL }),
+		});
+	}
+	return slingshotClient;
+}
