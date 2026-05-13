@@ -49,6 +49,9 @@ try {
           {view.repo.description && <p>{view.repo.description}</p>}
 
           <h2>Proposals ({view.proposals.length})</h2>
+          <p>
+            <Link href={`/${handle}/new`}>+ New draft proposal</Link>
+          </p>
           {view.proposals.length === 0 && (
             <p><em>No proposals yet. Add a <code>0001-name.md</code> to the repo's default branch, or open a pull adding one.</em></p>
           )}

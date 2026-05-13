@@ -9,7 +9,9 @@ import {
 	type ProposalFile,
 } from './knot.ts';
 import { resolveActor, clientFor as pdsClient } from './atproto.ts';
+import type * as Pull from 'lexicon/types/sh/tangled/repo/pull';
 import {
+	fileNameToSlug,
 	selectCommentsForProposal,
 	selectInDiscussionSlugs,
 	selectIssueCommentsForProposal,
@@ -18,7 +20,11 @@ import {
 	type IssueCommentRow,
 	type PullRow,
 } from './db.ts';
-import { extractMarkdownFileFromDiff, gunzipToString } from './patch.ts';
+import {
+	extractMarkdownFileFromDiff,
+	gunzipToString,
+	listMarkdownFilesInDiff,
+} from './patch.ts';
 
 export type ProposalStatus =
 	| 'discussion'
@@ -75,6 +81,12 @@ async function resolveOwner(handle: ActorIdentifier) {
 	return view;
 }
 
+function repoIdsFor(view: DiscussionRepoView): readonly string[] {
+	const ids = new Set<string>([view.repo.uri]);
+	if (view.repo.repoDid) ids.add(view.repo.repoDid);
+	return [...ids];
+}
+
 export async function listProposals(
 	env: ProposalEnv,
 	handle: ActorIdentifier,
@@ -92,7 +104,14 @@ export async function listProposals(
 		// knot unreachable / repo empty — leave onDefault empty.
 	}
 
-	const inDiscussion = env.DB ? await selectInDiscussionSlugs(env.DB, view.repo.uri) : [];
+	const repoIds = repoIdsFor(view);
+	const inDiscussion = env.DB ? await selectInDiscussionSlugs(env.DB, repoIds) : [];
+	let liveSlugs: string[] = [];
+	try {
+		liveSlugs = await fallbackOwnerPullSlugs(view);
+	} catch {
+		// best-effort — leave empty if PDS lookup fails
+	}
 	const seen = new Set<string>();
 	const summaries: ProposalSummary[] = [];
 
@@ -100,16 +119,18 @@ export async function listProposals(
 		seen.add(file.slug);
 		summaries.push({ slug: file.slug, status: 'committed' });
 	}
-	for (const slug of inDiscussion) {
+	for (const slug of [...inDiscussion, ...liveSlugs]) {
 		if (seen.has(slug)) continue;
 		seen.add(slug);
 		summaries.push({ slug, status: 'discussion' });
 	}
 
 	if (env.DB) {
-		// Refine status for files that appear on default but also have indexed pulls.
+		// Refine status only when D1 actually has indexed pulls for the slug.
+		// Otherwise keep the optimistic `committed`/`discussion` we just set.
 		for (const summary of summaries) {
-			const pulls = await selectPullsTouchingProposal(env.DB, view.repo.uri, summary.slug);
+			const pulls = await selectPullsTouchingProposal(env.DB, repoIds, summary.slug);
+			if (pulls.length === 0) continue;
 			summary.status = deriveStatus({
 				onDefaultBranch: seen.has(summary.slug) && onDefault.some((f) => f.slug === summary.slug),
 				pulls,
@@ -149,6 +170,137 @@ async function readContentFromPull(
 	return entry?.content ?? null;
 }
 
+/**
+ * Same-author live fallback for the proposal list: walks the owner's own PDS
+ * for `sh.tangled.repo.pull` records, extracts every `.md` path each patch
+ * touches, and returns the proposal slugs derived from those filenames. Used
+ * when D1 hasn't been seeded with cross-author/forward-going data yet.
+ */
+async function fallbackOwnerPullSlugs(ownerView: DiscussionRepoView): Promise<string[]> {
+	const ownerDid = ownerView.repo.owner.did;
+	const targetMatches = new Set<string>([ownerView.repo.uri]);
+	if (ownerView.repo.repoDid) targetMatches.add(ownerView.repo.repoDid);
+
+	const ownerActor = await resolveActor(ownerDid as ActorIdentifier);
+	const rpc = pdsClient(ownerActor.pds);
+
+	const slugs = new Set<string>();
+	let cursor: string | undefined;
+	let pages = 0;
+	const MAX_PAGES = 3;
+
+	while (pages < MAX_PAGES) {
+		const res = await rpc.get('com.atproto.repo.listRecords', {
+			params: {
+				repo: ownerDid as never,
+				collection: 'sh.tangled.repo.pull',
+				limit: 50,
+				cursor,
+			},
+		});
+		for (const record of res.data.records) {
+			const value = record.value as Pull.Main;
+			const targetRepo = value.target?.repo;
+			if (!targetRepo || !targetMatches.has(targetRepo)) continue;
+			const rounds = value.rounds ?? [];
+			const latest = rounds[rounds.length - 1];
+			const patchCid = (latest?.patchBlob as { ref?: { $link?: string } } | undefined)?.ref
+				?.$link;
+			if (!patchCid) continue;
+			const text = await fetchPatchAsText(ownerActor.pds, ownerDid, patchCid);
+			if (!text) continue;
+			for (const entry of listMarkdownFilesInDiff(text)) {
+				const slug = fileNameToSlug(entry.path);
+				if (slug) slugs.add(slug);
+			}
+		}
+		if (!res.data.cursor) break;
+		cursor = res.data.cursor;
+		pages++;
+	}
+	return [...slugs];
+}
+/**
+ * Same-author live fallback used when D1 has no rows for this proposal yet
+ * (typically: a user just submitted a draft and the indexer hasn't caught up).
+ * Scans `sh.tangled.repo.pull` on the discussion repo owner's PDS, finds
+ * records whose latest patch touches `${slug}.md`, and synthesises PullRows.
+ * Cross-author pulls remain invisible until the indexer is running.
+ */
+async function fallbackOwnerPulls(
+	ownerView: DiscussionRepoView,
+	slug: string,
+): Promise<PullRow[]> {
+	const ownerDid = ownerView.repo.owner.did;
+	const ownerRepoUri = ownerView.repo.uri;
+	// `target.repo` may be stored as either the lexicon-correct at-uri or the
+	// bare `repoDid` that tangled.org's own UI writes. Accept either.
+	const targetMatches = new Set<string>([ownerRepoUri]);
+	if (ownerView.repo.repoDid) targetMatches.add(ownerView.repo.repoDid);
+	const filename = `${slug}.md`;
+
+	const ownerActor = await resolveActor(ownerDid as ActorIdentifier);
+	const rpc = pdsClient(ownerActor.pds);
+
+	const out: PullRow[] = [];
+	let cursor: string | undefined;
+	let pages = 0;
+	const MAX_PAGES = 3;
+
+	while (pages < MAX_PAGES) {
+		const res = await rpc.get('com.atproto.repo.listRecords', {
+			params: {
+				repo: ownerDid as never,
+				collection: 'sh.tangled.repo.pull',
+				limit: 50,
+				cursor,
+			},
+		});
+		for (const record of res.data.records) {
+			const value = record.value as Pull.Main;
+			const targetRepo = value.target?.repo;
+			if (!targetRepo || !targetMatches.has(targetRepo)) continue;
+
+			const rounds = value.rounds ?? [];
+			const latest = rounds[rounds.length - 1];
+			const patchCid = (latest?.patchBlob as { ref?: { $link?: string } } | undefined)?.ref
+				?.$link;
+			if (!patchCid) continue;
+			const text = await fetchPatchAsText(ownerActor.pds, ownerDid, patchCid);
+			if (!text) continue;
+			const entry = extractMarkdownFileFromDiff(text, filename);
+			if (!entry) continue;
+
+			const mappedRounds = rounds.map((r) => ({
+				createdAt: r.createdAt,
+				patchCid:
+					(r.patchBlob as { ref?: { $link?: string } } | undefined)?.ref?.$link ?? '',
+			}));
+			out.push({
+				uri: record.uri,
+				cid: record.cid ?? '',
+				author_did: ownerDid,
+				target_repo_uri: value.target.repo ?? '',
+				target_branch: value.target.branch,
+				source_repo_uri: value.source?.repo ?? null,
+				source_branch: value.source?.branch ?? null,
+				title: value.title,
+				body: value.body ?? null,
+				rounds_json: JSON.stringify(mappedRounds),
+				state: 'open',
+				state_updated_at: null,
+				created_at: value.createdAt,
+			});
+		}
+		if (!res.data.cursor) break;
+		cursor = res.data.cursor;
+		pages++;
+	}
+
+	out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+	return out;
+}
+
 export async function getProposal(
 	env: ProposalEnv,
 	handle: ActorIdentifier,
@@ -174,7 +326,16 @@ export async function getProposal(
 		content = { source: 'default', text: fromDefault };
 	}
 
-	const pulls = env.DB ? await selectPullsTouchingProposal(env.DB, view.repo.uri, slug) : [];
+	const repoIds = repoIdsFor(view);
+	let pulls = env.DB ? await selectPullsTouchingProposal(env.DB, repoIds, slug) : [];
+	if (pulls.length === 0) {
+		try {
+			pulls = await fallbackOwnerPulls(view, slug);
+		} catch {
+			// best-effort — leave empty if PDS lookup fails
+		}
+	}
+
 	if (!content) {
 		const openPull = pulls.find((p) => p.state === 'open') ?? pulls[0];
 		if (openPull) {
@@ -192,8 +353,8 @@ export async function getProposal(
 	const discussion: DiscussionEntry[] = [];
 	if (env.DB) {
 		const [pcs, ics]: [CommentRow[], IssueCommentRow[]] = await Promise.all([
-			selectCommentsForProposal(env.DB, view.repo.uri, slug),
-			selectIssueCommentsForProposal(env.DB, view.repo.uri, slug),
+			selectCommentsForProposal(env.DB, repoIds, slug),
+			selectIssueCommentsForProposal(env.DB, repoIds, slug),
 		]);
 		for (const c of pcs) {
 			discussion.push({

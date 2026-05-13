@@ -12,7 +12,7 @@ export const onRequest = defineMiddleware((context, next) => {
 	if (segments.length === 0) {
 		return context.rewrite(`/${owner}`);
 	}
-	if (segments.length === 1 && segments[0] && SLUG_RE.test(segments[0])) {
+	if (segments.length === 1 && segments[0] && (segments[0] === 'new' || SLUG_RE.test(segments[0]))) {
 		return context.rewrite(`/${owner}/${segments[0]}`);
 	}
 

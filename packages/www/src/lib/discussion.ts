@@ -4,6 +4,7 @@ import type * as DiscussionRepo from 'lexicon/types/st/itch/discussion/repo';
 import type * as Repo from 'lexicon/types/sh/tangled/repo';
 
 import { clientForSlingshot, resolveActor } from './atproto.ts';
+import { getDefaultBranch, knotRepoId } from './knot.ts';
 
 export interface DiscussionRepoView {
 	claim: {
@@ -19,6 +20,9 @@ export interface DiscussionRepoView {
 		knot: string;
 		description?: string;
 		createdAt: string;
+		defaultBranch: string;
+		/** The repo's own DID (assigned by the knot), distinct from the owner's DID. */
+		repoDid?: string;
 		owner: { did: string; handle?: string };
 	};
 }
@@ -59,6 +63,14 @@ export async function getDiscussionRepo(handle: ActorIdentifier): Promise<Discus
 	});
 	const repoValue = repoRes.data.value as Repo.Main;
 
+	let defaultBranch = 'main';
+	try {
+		const branch = await getDefaultBranch(repoValue.knot, knotRepoId(owner.did, repoValue.name));
+		if (branch.name) defaultBranch = branch.name;
+	} catch {
+		// fall back to 'main'
+	}
+
 	return {
 		claim: {
 			uri: claimRes.data.uri,
@@ -73,6 +85,8 @@ export async function getDiscussionRepo(handle: ActorIdentifier): Promise<Discus
 			knot: repoValue.knot,
 			description: repoValue.description,
 			createdAt: repoValue.createdAt,
+			defaultBranch,
+			repoDid: repoValue.repoDid,
 			owner: { did: owner.did, handle: owner.handle },
 		},
 	};

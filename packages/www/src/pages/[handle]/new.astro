@@ -1,0 +1,188 @@
+---
+import type { ActorIdentifier } from '@atcute/lexicons/syntax';
+
+import Link from '../../components/Link.astro';
+import { NoDiscussionRepoError, getDiscussionRepo } from '../../lib/discussion.ts';
+
+export const prerender = false;
+
+const { handle } = Astro.params;
+
+let view;
+let error: string | null = null;
+try {
+  view = await getDiscussionRepo(handle as ActorIdentifier);
+} catch (err) {
+  if (err instanceof NoDiscussionRepoError) {
+    Astro.response.status = 404;
+    error = err.message;
+  } else {
+    Astro.response.status = 500;
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+// Match the shape tangled.org itself writes: `target.repo` is the repo's own
+// DID (the `repoDid` field on `sh.tangled.repo`), NOT an at-uri. The lexicon
+// declares `format: at-uri` but the appview parser accepts the bare DID form
+// and uses it to look up the repo. Our previous "use the at-uri" attempt left
+// the pull invisible on tangled.org despite living on the PDS just fine.
+const targetMeta = view
+  ? {
+      handle,
+      repoTarget: view.repo.repoDid ?? view.repo.uri,
+      defaultBranch: view.repo.defaultBranch,
+    }
+  : null;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{view ? `New proposal — ${view.repo.name}` : 'New proposal — st.itch'}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <header>
+      <Link href="/">st.itch</Link>
+      {' · '}
+      <Link href={`/${handle}`}>{handle}</Link>
+    </header>
+    <main>
+      {error && <p role="alert">{error}</p>}
+      {view && targetMeta && (
+        <article>
+          <h1>New draft proposal</h1>
+          <p>Proposing against <code>{view.repo.name}</code> on <code>{view.repo.knot}</code> (target branch: <code>{view.repo.defaultBranch}</code>).</p>
+
+          <p id="signin-notice" hidden>
+            You need to <Link href="/settings/login">sign in</Link> first. The draft will be written as a pull on your atproto PDS.
+          </p>
+
+          <form id="draft-form" hidden>
+            <p>
+              <label>
+                Title<br />
+                <input type="text" name="title" required style="width: 32rem; max-width: 100%;" />
+              </label>
+            </p>
+            <p>
+              <label>
+                Body (markdown)<br />
+                <textarea name="body" rows="16" required style="width: 32rem; max-width: 100%; font-family: monospace;"></textarea>
+              </label>
+            </p>
+            <p>
+              Will create file <code id="filename-preview">0000-...md</code>
+            </p>
+            <p>
+              <button type="submit">Submit draft</button>
+              <span id="status" role="status"></span>
+            </p>
+            <p id="form-error" role="alert" hidden></p>
+          </form>
+
+          <script
+            type="application/json"
+            id="target-meta"
+            set:html={JSON.stringify(targetMeta)}
+          />
+        </article>
+      )}
+    </main>
+    <script>
+      import { configure, resumeAgent } from '../../lib/oauth.ts';
+      import { buildPatch, gzipString, slugify } from '../../lib/draft.ts';
+
+      const meta = JSON.parse(document.getElementById('target-meta')!.textContent!);
+      const form = document.getElementById('draft-form') as HTMLFormElement;
+      const signinNotice = document.getElementById('signin-notice')!;
+      const filenamePreview = document.getElementById('filename-preview')!;
+      const status = document.getElementById('status')!;
+      const formError = document.getElementById('form-error')!;
+
+      const did = sessionStorage.getItem('rfd:did');
+      if (!did) {
+        signinNotice.hidden = false;
+      } else {
+        form.hidden = false;
+      }
+
+      const titleInput = form.elements.namedItem('title') as HTMLInputElement;
+      const bodyInput = form.elements.namedItem('body') as HTMLTextAreaElement;
+
+      const updatePreview = () => {
+        const slug = slugify(titleInput.value);
+        filenamePreview.textContent = slug ? `0000-${slug}.md` : '0000-….md';
+      };
+      titleInput.addEventListener('input', updatePreview);
+      updatePreview();
+
+      const setStatus = (text: string) => { status.textContent = text; };
+      const showError = (msg: string) => {
+        formError.textContent = msg;
+        formError.hidden = false;
+        setStatus('');
+      };
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        formError.hidden = true;
+        const title = titleInput.value.trim();
+        const body = bodyInput.value;
+        const slug = slugify(title);
+        if (!title || !slug) {
+          showError('Title must contain at least one alphanumeric character.');
+          return;
+        }
+        if (!body.trim()) {
+          showError('Body cannot be empty.');
+          return;
+        }
+        const fileName = `0000-${slug}.md`;
+
+        try {
+          setStatus('Preparing patch…');
+          configure();
+          const { rpc } = await resumeAgent(did!);
+
+          const patch = await buildPatch({ title, body, fileName, authorName: did! });
+          const compressed = await gzipString(patch);
+
+          setStatus('Uploading patch…');
+          const blobRes = await rpc.call('com.atproto.repo.uploadBlob', {
+            data: compressed as unknown as Blob,
+            headers: { 'content-type': 'application/gzip' },
+          });
+          const patchBlob = (blobRes.data as { blob: unknown }).blob;
+
+          setStatus('Creating pull…');
+          const now = new Date().toISOString();
+          await rpc.call('com.atproto.repo.createRecord', {
+            data: {
+              repo: did,
+              collection: 'sh.tangled.repo.pull',
+              record: {
+                $type: 'sh.tangled.repo.pull',
+                title,
+                createdAt: now,
+                target: {
+                  repo: meta.repoTarget,
+                  branch: meta.defaultBranch,
+                },
+                source: { branch: `proposal/${Date.now().toString(36)}` },
+                rounds: [{ createdAt: now, patchBlob }],
+              },
+            },
+          });
+
+          setStatus('Done. Redirecting…');
+          location.assign(`/${meta.handle}/0000-${slug}`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          showError(message);
+        }
+      });
+    </script>
+  </body>
+</html>

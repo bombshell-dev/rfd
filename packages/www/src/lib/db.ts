@@ -239,77 +239,95 @@ export async function deleteRecord(
 	await db.prepare(`DELETE FROM ${table} WHERE uri = ?`).bind(uri).run();
 }
 
+/**
+ * Tangled stores `target.repo` as either the lexicon-correct at-uri form OR
+ * the bare `repoDid` that its own UI writes. Callers should pass both
+ * identifiers so we match either shape in the indexed rows.
+ */
+export type RepoIdentifiers = readonly string[];
+
 export async function selectPullsTouchingProposal(
 	db: D1Database,
-	ownerRepoUri: string,
+	repoIds: RepoIdentifiers,
 	slug: string,
 ): Promise<PullRow[]> {
+	if (repoIds.length === 0) return [];
 	const numericSlug = slug.match(/^\d{4}/)?.[0] ?? slug;
+	const placeholders = repoIds.map((_, i) => `?${i + 1}`).join(', ');
+	const slugIdx = repoIds.length;
 	const res = await db
 		.prepare(
 			`SELECT p.* FROM pulls p
 			 JOIN pull_files pf ON pf.pull_uri = p.uri
-			 WHERE p.target_repo_uri = ?1
-			   AND (pf.proposal_slug = ?2 OR pf.proposal_slug = ?3)
+			 WHERE p.target_repo_uri IN (${placeholders})
+			   AND (pf.proposal_slug = ?${slugIdx + 1} OR pf.proposal_slug = ?${slugIdx + 2})
 			 ORDER BY p.created_at DESC`,
 		)
-		.bind(ownerRepoUri, slug, numericSlug)
+		.bind(...repoIds, slug, numericSlug)
 		.all<PullRow>();
 	return res.results ?? [];
 }
 
 export async function selectInDiscussionSlugs(
 	db: D1Database,
-	ownerRepoUri: string,
+	repoIds: RepoIdentifiers,
 ): Promise<string[]> {
+	if (repoIds.length === 0) return [];
+	const placeholders = repoIds.map((_, i) => `?${i + 1}`).join(', ');
 	const res = await db
 		.prepare(
 			`SELECT DISTINCT pf.proposal_slug AS slug FROM pull_files pf
 			 JOIN pulls p ON p.uri = pf.pull_uri
-			 WHERE p.target_repo_uri = ?1
+			 WHERE p.target_repo_uri IN (${placeholders})
 			   AND p.state = 'open'
 			   AND pf.proposal_slug IS NOT NULL`,
 		)
-		.bind(ownerRepoUri)
+		.bind(...repoIds)
 		.all<{ slug: string }>();
 	return (res.results ?? []).map((r) => r.slug).filter((s): s is string => !!s);
 }
 
 export async function selectCommentsForProposal(
 	db: D1Database,
-	ownerRepoUri: string,
+	repoIds: RepoIdentifiers,
 	slug: string,
 ): Promise<CommentRow[]> {
+	if (repoIds.length === 0) return [];
 	const numericSlug = slug.match(/^\d{4}/)?.[0] ?? slug;
+	const placeholders = repoIds.map((_, i) => `?${i + 1}`).join(', ');
+	const slugIdx = repoIds.length;
 	const res = await db
 		.prepare(
 			`SELECT c.* FROM comments c
 			 JOIN pull_files pf ON pf.pull_uri = c.pull_uri
 			 JOIN pulls p ON p.uri = c.pull_uri
-			 WHERE p.target_repo_uri = ?1
-			   AND (pf.proposal_slug = ?2 OR pf.proposal_slug = ?3)
+			 WHERE p.target_repo_uri IN (${placeholders})
+			   AND (pf.proposal_slug = ?${slugIdx + 1} OR pf.proposal_slug = ?${slugIdx + 2})
 			 ORDER BY c.created_at`,
 		)
-		.bind(ownerRepoUri, slug, numericSlug)
+		.bind(...repoIds, slug, numericSlug)
 		.all<CommentRow>();
 	return res.results ?? [];
 }
 
 export async function selectIssueCommentsForProposal(
 	db: D1Database,
-	ownerRepoUri: string,
+	repoIds: RepoIdentifiers,
 	slug: string,
 ): Promise<IssueCommentRow[]> {
+	if (repoIds.length === 0) return [];
 	const numericSlug = slug.match(/^\d{4}/)?.[0] ?? slug;
+	const placeholders = repoIds.map((_, i) => `?${i + 1}`).join(', ');
+	const slugIdx = repoIds.length;
 	const res = await db
 		.prepare(
 			`SELECT ic.* FROM issue_comments ic
 			 JOIN issues i ON i.uri = ic.issue_uri
-			 WHERE i.target_repo_uri = ?1
-			   AND (i.proposal_slug = ?2 OR i.proposal_slug = ?3)
+			 WHERE i.target_repo_uri IN (${placeholders})
+			   AND (i.proposal_slug = ?${slugIdx + 1} OR i.proposal_slug = ?${slugIdx + 2})
 			 ORDER BY ic.created_at`,
 		)
-		.bind(ownerRepoUri, slug, numericSlug)
+		.bind(...repoIds, slug, numericSlug)
 		.all<IssueCommentRow>();
 	return res.results ?? [];
 }
